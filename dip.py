@@ -21,12 +21,12 @@ dtype = torch.FloatTensor
 
 PLOT = True
 TRAINING = True
-imsize = 512
+imsize = 1024
 load_model=True
-num_iter = 200
-show_every = 50
+num_iter = 100
+show_every = 25
 save_every=10
-LR= 0.05
+LR= 0.01
 nz=2
 ngf=6
 add_noise=0
@@ -35,7 +35,7 @@ add_noise=0
 random.seed(1)
 torch.manual_seed(1)
 
-img_path='photos/photos_corrupted/0.jpg'
+img_path='photos/photos_corrupted/1.jpg'
 mask_path='photos/photos_mask/0.jpg'
 
 if not os.path.exists('saved_models/'):
@@ -58,9 +58,10 @@ print('size of img_torch_array: '+str(img_torch_array.size()))
 mask_pil=square_crop(mask_path)
 mask_pil=img_make_mask(mask_pil)
 img_mask_pil=resize_to_height_ref(mask_pil,imsize)
-img_mask_np = np.round(pil_to_np(img_mask_pil))
+img_mask_np = pil_to_np(img_mask_pil)
 mask_torch = np_to_torch(img_mask_np).type(dtype)
 
+# raise ValueError('')
 #corrupt image
 masked_images=img_torch_array*mask_torch
 
@@ -132,6 +133,13 @@ if TRAINING:
     closure()
   torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer.state_dict()}, 'saved_models/generator_DIP.pkl')
 
+#save final result: take real image in the noncurrupted regions
+reconstructed = generator(net_input)*(-mask_torch+1)+img_torch_array*mask_torch
+reconstructed_np=reconstructed[0,:].transpose(0,1).transpose(1,2).detach().numpy()
+masked_np = masked_images[0,:].transpose(0,1).transpose(1,2).detach().numpy()
+orig_np=img_torch_array[0,:].transpose(0,1).transpose(1,2).detach().numpy()
+
+save_comparison_plot(masked_np,reconstructed_np,orig_np,'DIP_images/final_reconstruction_'+str(i))
 
 
 

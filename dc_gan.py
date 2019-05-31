@@ -1,261 +1,245 @@
-from __future__ import print_function
-import argparse
+# from __future__ import print_function
+import matplotlib.pyplot as plt
+import glob
+import time
 import os
 import random
+import numpy as np
+from models.dc_generator import dc_generator
+from models.dc_encoder import dc_encoder
+from models.dc_discriminator import dc_discriminator
 import torch
-import torch.nn as nn
-import torch.nn.parallel
-import torch.backends.cudnn as cudnn
-import torch.optim as optim
-import torch.utils.data
-import torchvision.datasets as dset
-import torchvision.transforms as transforms
+import torch.optim
+import time
 import torchvision.utils as vutils
 
+from common_utils import *
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', required=True, help='cifar10 | lsun | mnist |imagenet | folder | lfw | fake')
-parser.add_argument('--dataroot', required=True, help='path to dataset')
-parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
-parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
-parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
-parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
-parser.add_argument('--ngf', type=int, default=64)
-parser.add_argument('--ndf', type=int, default=64)
-parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
-parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
-parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
-parser.add_argument('--cuda', action='store_true', help='enables cuda')
-parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
-parser.add_argument('--netG', default='', help="path to netG (to continue training)")
-parser.add_argument('--netD', default='', help="path to netD (to continue training)")
-parser.add_argument('--outf', default='.', help='folder to output images and model checkpoints')
-parser.add_argument('--manualSeed', type=int, help='manual seed')
+#---global settings
 
-opt = parser.parse_args()
-print(opt)
+dtype = torch.FloatTensor
+PLOT = True
+TRAINING = True
+imsize = 32
+load_model = True
+num_iter =500
+show_every = 50
+shuffle=True
+shuffle_every=10
+save_every=50
+max_num_img=800
+batch_size=80#must be smaller or equal than max_num_img
+LR_gen= 0.0001
+LR_disc=0.0001
+nz=5
 
-try:
-    os.makedirs(opt.outf)
-except OSError:
-    pass
+mirror=True
+rotate=True
 
-if opt.manualSeed is None:
-    opt.manualSeed = random.randint(1, 10000)
-print("Random Seed: ", opt.manualSeed)
-random.seed(opt.manualSeed)
-torch.manual_seed(opt.manualSeed)
+ngf=30
+ndf=10
+#----- specifiy the figure
+random.seed(1)
+torch.manual_seed(1)
 
-cudnn.benchmark = True
+# a low res rose image
+img_path='/Users/Giaco/Documents/Elektrotechnik-Master/image_processing/my_deep_image_prior/data/rose/'
+# mask_path='/Users/Giaco/Documents/Elektrotechnik-Master/image_processing/my_deep_image_prior/data/inpainting/library_mask.png'
 
-if torch.cuda.is_available() and not opt.cuda:
-    print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+#load images
+img_list=[]
+i=0
+for img_name in os.listdir(img_path):
+  if img_name.endswith(".jpg") and i<max_num_img:
+    img_pil=square_crop(img_path+img_name)
+    img_pil=resize_to_height_ref(img_pil,imsize)
+    img_list.append(pil_to_np(img_pil))
+    i+=1
+    #----data augmentation-----
+    if mirror and i<max_num_img:
+      img_pil_mirror=PIL.ImageOps.mirror(img_pil)
+      img_list.append(pil_to_np(img_pil_mirror))
+      i+=1
+      if rotate and i<max_num_img:
+        img_list.append(pil_to_np(img_pil_mirror.rotate(90, expand=False)))
+        i+=1
+        if i<max_num_img:
+          img_list.append(pil_to_np(img_pil_mirror.rotate(180, expand=False)))
+          i+=1
+        if i<max_num_img:
+          img_list.append(pil_to_np(img_pil_mirror.rotate(270, expand=False)))
+          i+=1
+    if rotate and i<max_num_img:
+      img_list.append(pil_to_np(img_pil.rotate(90, expand=False)))
+      i+=1
+      if i<max_num_img:
+        img_list.append(pil_to_np(img_pil.rotate(180, expand=False)))
+        i+=1
+      if i<max_num_img:
+        img_list.append(pil_to_np(img_pil.rotate(180, expand=False)))
+        i+=1
+      if i<max_num_img:
+        img_list.append(pil_to_np(img_pil.rotate(270, expand=False)))
+        i+=1
 
-if opt.dataset in ['imagenet', 'folder', 'lfw']:
-    # folder dataset
-    dataset = dset.ImageFolder(root=opt.dataroot,
-                               transform=transforms.Compose([
-                                   transforms.Resize(opt.imageSize),
-                                   transforms.CenterCrop(opt.imageSize),
-                                   transforms.ToTensor(),
-                                   transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                               ]))
-    nc=3
-elif opt.dataset == 'lsun':
-    dataset = dset.LSUN(root=opt.dataroot, classes=['bedroom_train'],
-                        transform=transforms.Compose([
-                            transforms.Resize(opt.imageSize),
-                            transforms.CenterCrop(opt.imageSize),
-                            transforms.ToTensor(),
-                            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                        ]))
-    nc=3
-elif opt.dataset == 'cifar10':
-    dataset = dset.CIFAR10(root=opt.dataroot, download=True,
-                           transform=transforms.Compose([
-                               transforms.Resize(opt.imageSize),
-                               transforms.ToTensor(),
-                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                           ]))
-    nc=3
+n_img_loaded=len(img_list)
+print('number of loaded images: '+str(n_img_loaded))
+img_shape=img_list[0].shape
+img_np_array=np.zeros([len(img_list),img_shape[0],img_shape[1],img_shape[2]])
+for j in range(len(img_list)):
+  img_np_array[j,:]=img_list[j]
+img_torch_array=torch.from_numpy(img_np_array).type(dtype)
+print('size of img_torch_array: '+str(img_torch_array.size()))
 
-elif opt.dataset == 'mnist':
-        dataset = dset.MNIST(root=opt.dataroot, download=True,
-                           transform=transforms.Compose([
-                               transforms.Resize(opt.imageSize),
-                               transforms.ToTensor(),
-                               transforms.Normalize((0.5,), (0.5,)),
-                           ]))
-        nc=1
+#----torch inizializations
+#---specify optimizer
+OPTIMIZER = 'adam'
 
-elif opt.dataset == 'fake':
-    dataset = dset.FakeData(image_size=(3, opt.imageSize, opt.imageSize),
-                            transform=transforms.ToTensor())
-    nc=3
-
-assert dataset
-dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
-                                         shuffle=True, num_workers=int(opt.workers))
-
-device = torch.device("cuda:0" if opt.cuda else "cpu")
-ngpu = int(opt.ngpu)
-nz = int(opt.nz)
-ngf = int(opt.ngf)
-ndf = int(opt.ndf)
-
-
-# custom weights initialization called on netG and netD
-def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        m.weight.data.normal_(0.0, 0.02)
-    elif classname.find('BatchNorm') != -1:
-        m.weight.data.normal_(1.0, 0.02)
-        m.bias.data.fill_(0)
-
-
-class Generator(nn.Module):
-    def __init__(self, ngpu):
-        super(Generator, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d(     nz, ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(ngf * 8),
-            nn.ReLU(True),
-            # state size. (ngf*8) x 4 x 4
-            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 4),
-            nn.ReLU(True),
-            # state size. (ngf*4) x 8 x 8
-            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 2),
-            nn.ReLU(True),
-            # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 2,     ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf),
-            nn.ReLU(True),
-            # state size. (ngf) x 32 x 32
-            nn.ConvTranspose2d(    ngf,      nc, 4, 2, 1, bias=False),
-            nn.Tanh()
-            # state size. (nc) x 64 x 64
-        )
-
-    def forward(self, input):
-        if input.is_cuda and self.ngpu > 1:
-            output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
-        else:
-            output = self.main(input)
-        return output
+if not os.path.exists('saved_models/'):
+    os.mkdir('saved_models')
+if not os.path.exists('dc_gan_images/') and PLOT:
+    os.mkdir('dc_gan_images/')
+#-------image specific settigns----------
+generator = dc_generator(nz,ngf=ngf,nc=3,imgsize=imsize)
+discriminator = dc_discriminator(imsize,ndf=ndf,nc=3,max_depth=7)
+optimizer_gen= torch.optim.Adam(generator.parameters(), lr=LR_gen)
+optimizer_disc= torch.optim.Adam(discriminator.parameters(), lr=LR_disc)
+state_epoch=0
+if load_model:
+  print('reload model....')
+  state_dict_gen=torch.load('saved_models/dc_gan_generator'+str(imsize)+'.pkl')
+  state_dict_disc=torch.load('saved_models/dc_gan_discriminator'+str(imsize)+'.pkl')
+  state_epoch=state_dict_gen['epoch']
+  generator.load_state_dict(state_dict_gen['model_state'])
+  discriminator.load_state_dict(state_dict_disc['model_state'])
+  optimizer_gen.load_state_dict(state_dict_gen['optimizer_state'])
+  optimizer_disc.load_state_dict(state_dict_disc['optimizer_state'])
 
 
-netG = Generator(ngpu).to(device)
-netG.apply(weights_init)
-if opt.netG != '':
-    netG.load_state_dict(torch.load(opt.netG))
-print(netG)
+# Compute number of parameters
+np_gen  = sum(np.prod(list(p.size())) for p in generator.parameters())
+print ('Number of params in dc_generator: %d' % np_gen)
 
+# def disc_loss_fuction(d,d_hat,batchSize):
+#   print('detect reals with prob: '+str(torch.sum(d)/batchSize))
+#   print('detect fakes with prob: '+str(torch.sum(1-d_hat)/batchSize))
+#   loss=torch.sum(-torch.log(d)-torch.log(1-d_hat))
+#   return loss/batchSize
 
-class Discriminator(nn.Module):
-    def __init__(self, ngpu):
-        super(Discriminator, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is (nc) x 64 x 64
-            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf) x 32 x 32
-            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*2) x 16 x 16
-            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*4) x 8 x 8
-            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*8) x 4 x 4
-            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, input):
-        if input.is_cuda and self.ngpu > 1:
-            output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
-        else:
-            output = self.main(input)
-
-        return output.view(-1, 1).squeeze(1)
-
-
-netD = Discriminator(ngpu).to(device)
-netD.apply(weights_init)
-if opt.netD != '':
-    netD.load_state_dict(torch.load(opt.netD))
-print(netD)
-
+# def ae_loss_function(inpainted,orig,latent_out,d_hat,batchSize):
+#   de=inpainted-orig 
+#   loss=torch.sum(torch.mul(de,de))
+#   latent_reg=l_reg_im*torch.sum(-torch.log(d_hat))
+#   # print('regularization loss: '+str(latent_reg/batchSize))
+#   loss+=latent_reg
+#   return loss/batchSize
 criterion = nn.BCELoss()
-
-fixed_noise = torch.randn(opt.batchSize, nz, 1, 1, device=device)
+fixed_noise = torch.randn(batch_size, nz, 1, 1)
 real_label = 1
 fake_label = 0
 
-# setup optimizer
-optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+#----- training loop--------
+batch_idx=[0]
+for b in range(int(np.floor(n_img_loaded/batch_size))):
+  batch_idx.append((b+1)*batch_size)
+if n_img_loaded>batch_size*(len(batch_idx)-1):
+  batch_idx.append(n_img_loaded)
 
-for epoch in range(opt.niter):
-    for i, data in enumerate(dataloader, 0):
-        ############################
-        # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
-        ###########################
-        # train with real
-        netD.zero_grad()
-        real_cpu = data[0].to(device)
-        batch_size = real_cpu.size(0)
-        label = torch.full((batch_size,), real_label, device=device)
 
-        output = netD(real_cpu)
-        errD_real = criterion(output, label)
-        errD_real.backward()
-        D_x = output.mean().item()
+i = state_epoch
+def closure():  
+    global i
+    global net_input
+    global img_torch_array
+    train_loss=0
+    if shuffle and (i+1)%shuffle_every==0:
+      shuffle_idx=torch.randperm(img_torch_array.size()[0])
+      img_torch_array=img_torch_array[shuffle_idx]
 
-        # train with fake
-        noise = torch.randn(batch_size, nz, 1, 1, device=device)
-        fake = netG(noise)
-        label.fill_(fake_label)
-        output = netD(fake.detach())
-        errD_fake = criterion(output, label)
-        errD_fake.backward()
-        D_G_z1 = output.mean().item()
-        errD = errD_real + errD_fake
-        optimizerD.step()
+    for idx in range(len(batch_idx)-1):
+      batchSize=batch_idx[idx+1]-batch_idx[idx]
+      optimizer_gen.zero_grad()
+      optimizer_disc.zero_grad()
 
-        ############################
-        # (2) Update G network: maximize log(D(G(z)))
-        ###########################
-        netG.zero_grad()
-        label.fill_(real_label)  # fake labels are real for generator cost
-        output = netD(fake)
-        errG = criterion(output, label)
-        errG.backward()
-        D_G_z2 = output.mean().item()
-        optimizerG.step()
+#-----generation
+      noise = torch.randn(batchSize, nz, 1, 1)
+      out = generator(noise)
+ 
+#----discriminator training
+      d=discriminator(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:])
+      d_hat1 = discriminator(out.detach())
+      # disc_loss = disc_loss_fuction(d,d_hat,batchSize)
+      # disc_loss.backward()
+      label = torch.full((batchSize,), real_label)
+      loss_disc_real=criterion(d,label)
+      loss_disc_real.backward()
+      label.fill_(fake_label)
+      loss_disc_fake=criterion(d_hat1,label)
+      loss_disc_fake.backward()
+      D = d.mean().item()
+      D_hat1=d_hat1.mean().item()
+      optimizer_disc.step()
+#---- generator training
+      label.fill_(real_label)
+      d_hat2=discriminator(out)
+      loss_gen=criterion(d_hat2,label)
+      loss_gen.backward()
+      D_hat2=d_hat2.mean().item()
+      optimizer_gen.step()
 
-        print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
-              % (epoch, opt.niter, i, len(dataloader),
-                 errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
-        if i % 100 == 0:
-            vutils.save_image(real_cpu,
-                    '%s/real_samples.png' % opt.outf,
-                    normalize=True)
-            fake = netG(fixed_noise)
-            vutils.save_image(fake.detach(),
-                    '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch),
-                    normalize=True)
+    # if  PLOT and (i+1) % show_every == 0:
+    #     # n_im=i%n_img_loaded
+    #     print('save plot ...')
+    #     for n_im in range(np.minimum(10,batch_size)):
+    #       out_np = torch.clamp(out[n_im,:].transpose(0,1).transpose(1,2).detach(),0,1).numpy()
+    #       masked_np = torch.clamp(net_input[+n_im,:].transpose(0,1).transpose(1,2).detach(),0,1).numpy()
+    #       orig_np=img_torch_array[n_im,:].transpose(0,1).transpose(1,2).detach().numpy()
+    #       save_comparison_plot(masked_np,out_np,orig_np,'conv_ae_images_latent_disc/'+str(i)+'_'+str(n_im))
 
-    # do checkpointing
-    torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
-    torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
+      print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
+            % (i, num_iter+state_epoch, idx, len(batch_idx)-1,
+               (loss_disc_real+loss_disc_real).item(), loss_gen.item(), D, D_hat1, D_hat2))
+      if (i+1) % show_every == 0:
+          vutils.save_image(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:],
+                  '%s/real_samples.png' % 'dc_gan_images',
+                  normalize=True)
+          fake = generator(fixed_noise)
+          vutils.save_image(fake.detach(),
+                  '%s/fake_samples_epoch_%03d.png' % ('dc_gan_images', i),
+                  normalize=True)
+
+    if (i+1)%save_every==0:
+      print('save model ...')
+      torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/dc_gan_generator'+str(imsize)+'.pkl')  
+      torch.save({'epoch': i, 'model_state': discriminator.state_dict(),'optimizer_state': optimizer_disc.state_dict()}, 'saved_models/dc_gan_discriminator'+str(imsize)+'.pkl')    
+    i += 1
+
+    return
+
+#-----call optimizer and save stuff ----
+if TRAINING:
+  print('start training ...')
+  for j in range(num_iter):
+    closure()
+  torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/dc_gan_generator'+str(imsize)+'.pkl')
+  torch.save({'epoch': i, 'model_state': discriminator.state_dict(),'optimizer_state': optimizer_disc.state_dict()}, 'saved_models/dc_gan_discriminator'+str(imsize)+'.pkl') 
+#---- testing 
+
+# corrupted_img=net_input+(-2+j*0.1)
+# if PLOT:
+#   N=20
+#   corrupted_img=torch.randn(N, latent_dim, 1, 1, device='cpu')
+#   with torch.no_grad():
+#     latent_out=encoder(net_input[0:100,:])
+#     latent_std=torch.sqrt(torch.sum(torch.mul(latent_out,latent_out))/100)
+#     print('standard deviation in latent_space: '+str(latent_std))
+#     corrupted_img=torch.randn(N, latent_dim, 1, 1, device='cpu')*latent_std
+#     inpainted_img=torch.clamp(generator(corrupted_img), 0, 1).transpose(1,2).transpose(2,3).detach().numpy()
+#   original_img = img_torch_array[0:1,:].transpose(1,2).transpose(2,3).detach().numpy()[0,:]
+#   corrupted_img = masked_images[0:1,:].transpose(1,2).transpose(2,3).detach().numpy()[0,:]
+#   for j in range(N):
+#     inpainted_img_j = inpainted_img[j:j+1,:]
+#     save_comparison_plot(corrupted_img[0,:],inpainted_img_j[0,:],original_img[0,:],'conv_ae_images_latent_disc/'+str(j))
+
+
+

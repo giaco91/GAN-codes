@@ -54,12 +54,18 @@ def img_make_mask(im):
     #sets all rgb values that are non-zero to one
     im_rgb=im.convert('RGB')
     W,H=im_rgb.size
+    new_img=create_image(W,H)
     im_rgb_px=im_rgb.load()
-    for w in range(0,W):
-        for h in range(0,H):
-            if im_rgb_px[w,h][0]+im_rgb_px[w,h][1]+im_rgb_px[w,h][2]>10:
-                im_rgb_px[w,h]=(256,256,256)
-    return im_rgb
+    # for w in range(0,W):
+    #     for h in range(0,H):
+    #         if im_rgb_px[w,h][0]+im_rgb_px[w,h][1]+im_rgb_px[w,h][2]>10:
+    #             im_rgb_px[w,h]=(256,256,256)
+    new_img_px=new_img.load()
+    for w in range(W):
+        for h in range(H):
+            if im_rgb_px[w,h][0]+im_rgb_px[w,h][1]+im_rgb_px[w,h][2]<50:
+                new_img_px[w,h]=(0,0,0)
+    return new_img
 
 def correct_for_rotation(img):
     if img._getexif() is not None:
