@@ -23,10 +23,10 @@ TRAINING = True
 imsize = 32
 load_model = True
 num_iter =500
-show_every = 50
+show_every = 25
 shuffle=True
 shuffle_every=10
-save_every=50
+save_every=25
 max_num_img=800
 batch_size=80#must be smaller or equal than max_num_img
 LR_gen= 0.0001
@@ -120,19 +120,15 @@ if load_model:
 np_gen  = sum(np.prod(list(p.size())) for p in generator.parameters())
 print ('Number of params in dc_generator: %d' % np_gen)
 
-# def disc_loss_fuction(d,d_hat,batchSize):
-#   print('detect reals with prob: '+str(torch.sum(d)/batchSize))
-#   print('detect fakes with prob: '+str(torch.sum(1-d_hat)/batchSize))
-#   loss=torch.sum(-torch.log(d)-torch.log(1-d_hat))
-#   return loss/batchSize
+def disc_loss_fuction(d,d_hat,batchSize):
+  # print('detect reals with prob: '+str(torch.sum(d)/batchSize))
+  # print('detect fakes with prob: '+str(torch.sum(1-d_hat)/batchSize))
+  loss=torch.sum(-torch.log(d)-torch.log(1-d_hat))
+  return loss/batchSize
 
-# def ae_loss_function(inpainted,orig,latent_out,d_hat,batchSize):
-#   de=inpainted-orig 
-#   loss=torch.sum(torch.mul(de,de))
-#   latent_reg=l_reg_im*torch.sum(-torch.log(d_hat))
-#   # print('regularization loss: '+str(latent_reg/batchSize))
-#   loss+=latent_reg
-#   return loss/batchSize
+def gen_loss_function(d_hat,batchSize):
+    loss=torch.sum(-torch.log(d_hat))
+    return loss/batchSize
 criterion = nn.BCELoss()
 fixed_noise = torch.randn(batch_size, nz, 1, 1)
 real_label = 1
@@ -168,21 +164,25 @@ def closure():
 #----discriminator training
       d=discriminator(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:])
       d_hat1 = discriminator(out.detach())
-      # disc_loss = disc_loss_fuction(d,d_hat,batchSize)
-      # disc_loss.backward()
-      label = torch.full((batchSize,), real_label)
-      loss_disc_real=criterion(d,label)
-      loss_disc_real.backward()
-      label.fill_(fake_label)
-      loss_disc_fake=criterion(d_hat1,label)
-      loss_disc_fake.backward()
+      loss_disc = disc_loss_fuction(d,d_hat1,batchSize)
+      loss_disc.backward()
+      # label = torch.full((batchSize,), real_label)
+      # loss_disc_real=criterion(d,label)
+      # loss_disc_real.backward()
+      # label.fill_(fake_label)
+      # loss_disc_fake=criterion(d_hat1,label)
+      # loss_disc_fake.backward()
+      # loss_disc=loss_disc_real.item()+loss_disc_fake.item()
+      loss_disc.item()
       D = d.mean().item()
       D_hat1=d_hat1.mean().item()
       optimizer_disc.step()
+
 #---- generator training
-      label.fill_(real_label)
       d_hat2=discriminator(out)
-      loss_gen=criterion(d_hat2,label)
+      # label.fill_(real_label)
+      # loss_gen=criterion(d_hat2,label)
+      loss_gen=gen_loss_function(d_hat2,batchSize)
       loss_gen.backward()
       D_hat2=d_hat2.mean().item()
       optimizer_gen.step()
@@ -198,7 +198,7 @@ def closure():
 
       print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
             % (i, num_iter+state_epoch, idx, len(batch_idx)-1,
-               (loss_disc_real+loss_disc_real).item(), loss_gen.item(), D, D_hat1, D_hat2))
+               loss_disc, loss_gen.item(), D, D_hat1, D_hat2))
       if (i+1) % show_every == 0:
           vutils.save_image(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:],
                   '%s/real_samples.png' % 'dc_gan_images',
