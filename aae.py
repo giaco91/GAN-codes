@@ -7,7 +7,7 @@ import random
 import numpy as np
 from models.dc_generator import dc_generator
 from models.dc_encoder import dc_encoder
-from models.dc_discriminator import dc_discriminator
+from models.dfc_discriminator import dfc_discriminator
 import torch
 import torch.optim
 import time
@@ -19,22 +19,25 @@ from common_utils import *
 dtype = torch.FloatTensor
 PLOT = True
 TRAINING = True
-imsize = 128
+imsize = 32
 load_model = True
-num_iter =1
-show_every = 1
+num_iter =200
+show_every = 100
 shuffle=True
 shuffle_every=10
 save_every=1000
-max_num_img=20
-batch_size=20#must be smaller or equal than max_num_img
-LR_enc=LR_gen= 0.00001
-latent_dim=20
+max_num_img=300
+batch_size=300#must be smaller or equal than max_num_img
+LR_enc=LR_gen= 0.001
+LR_disc=0.001
+l_reg=100
+latent_dim=2
 
 mirror=True
 rotate=True
 
 input_corruption='noise'#can be one of: 'None','noise' or 'holes'
+latent_distribution='gauss'#can be one of: 'uniform' or 'gauss'
 
 nef=20
 ngf=20
@@ -107,7 +110,6 @@ else:
   raise ValueError('the value: "input_corruption" must be one of {None,noise,holes}!')
 
 #----torch inizializations
-
 print('inputshape '+str(net_input.size()))
 
 #---specify optimizer
@@ -115,35 +117,48 @@ OPTIMIZER = 'adam'
 
 if not os.path.exists('saved_models/'):
     os.mkdir('saved_models')
-if not os.path.exists('dc_ae_images/') and PLOT:
-    os.mkdir('dc_ae_images')
+if not os.path.exists('aae_images/') and PLOT:
+    os.mkdir('aae_images')
 #-------image specific settigns----------
 encoder = dc_encoder(latent_dim,imsize,ndf=nef)
 generator = dc_generator(latent_dim,ngf=ngf,nc=3,imgsize=imsize)
+discriminator = dfc_discriminator(latent_dim)
 
 optimizer_enc = torch.optim.Adam(encoder.parameters(), lr=LR_enc)
 optimizer_gen= torch.optim.Adam(generator.parameters(), lr=LR_gen)
+optimizer_disc=torch.optim.Adam(discriminator.parameters(), lr=LR_disc)
 state_epoch=0
 if load_model:
   print('reload model....')
-  state_dict_enc=torch.load('saved_models/dc_ae_enc_'+str(imsize)+'.pkl')
-  state_dict_gen=torch.load('saved_models/dc_ae_gen_'+str(imsize)+'.pkl')
+  state_dict_enc=torch.load('saved_models/aae_enc_'+str(imsize)+'.pkl')
+  state_dict_gen=torch.load('saved_models/aae_gen_'+str(imsize)+'.pkl')
+  state_dict_disc=torch.load('saved_models/aae_disc_'+str(imsize)+'.pkl')
   state_epoch=state_dict_gen['epoch']
   encoder.load_state_dict(state_dict_enc['model_state'])
   generator.load_state_dict(state_dict_gen['model_state'])
+  discriminator.load_state_dict(state_dict_disc['model_state'])
   optimizer_enc.load_state_dict(state_dict_enc['optimizer_state'])
   optimizer_gen.load_state_dict(state_dict_gen['optimizer_state'])
- 
-# Compute number of parameters
+  optimizer_disc.load_state_dict(state_dict_disc['optimizer_state'])
+
 np_enc = sum(np.prod(list(p.size())) for p in encoder.parameters())
 np_gen  = sum(np.prod(list(p.size())) for p in generator.parameters())
 np_tot=np_enc+np_gen
 print ('Number of params in dc_autoencoder: %d' % np_tot)
 
+def disc_loss_fuction(d,d_hat,batchSize):
+  # print('detect reals with prob: '+str(torch.sum(d)/batchSize))
+  # print('detect fakes with prob: '+str(torch.sum(1-d_hat)/batchSize))
+  loss=torch.sum(-torch.log(d)-torch.log(1-d_hat))
+  return loss/batchSize
 
-def ae_loss_function(inpainted,orig,batchSize):
+def ae_loss_function(inpainted,orig,dhat,batchSize):
   de=inpainted-orig 
   loss=torch.sum(torch.mul(de,de))
+  reg_loss=l_reg*torch.sum(-torch.log(dhat))
+  # print('regularization loss: '+str(reg_loss/batchSize))
+  # print('reconstruction loss: '+str(loss/batchSize))
+  loss+=reg_loss
   return loss/batchSize
 
 #----- training loop--------
@@ -175,11 +190,26 @@ def closure():
       batchSize=batch_idx[idx+1]-batch_idx[idx]
       optimizer_gen.zero_grad()
       optimizer_enc.zero_grad()
+      optimizer_disc.zero_grad()
 
 #-----propagate the autoencoder
       latent_out=encoder(net_input[batch_idx[idx]:batch_idx[idx+1],:]) 
       out = generator(latent_out)
-      ae_loss=ae_loss_function(out,img_torch_array[batch_idx[idx]:batch_idx[idx+1],:],batchSize)
+
+#----discriminator training
+      if latent_distribution=='uniform':
+        latent_noise=torch.rand(batchSize, latent_dim)-0.5
+      else:
+        latent_noise=torch.randn(batchSize, latent_dim)
+      d=discriminator(latent_noise)
+      d_hat1 = discriminator(torch.squeeze(latent_out).detach())
+      loss_disc = disc_loss_fuction(d,d_hat1,batchSize)
+      loss_disc.backward()
+      optimizer_disc.step()
+
+#-----generator training
+      d_hat2 = discriminator(torch.squeeze(latent_out))
+      ae_loss=ae_loss_function(out,img_torch_array[batch_idx[idx]:batch_idx[idx+1],:],d_hat2,batchSize)
       ae_loss.backward()
       optimizer_enc.step()
       optimizer_gen.step()
@@ -193,12 +223,19 @@ def closure():
           out_np = out[n_im,:].transpose(0,1).transpose(1,2).detach().numpy()
           corrupted_np = torch.clamp(net_input[+n_im,:].transpose(0,1).transpose(1,2).detach(),0,1).numpy()
           orig_np=img_torch_array[n_im,:].transpose(0,1).transpose(1,2).detach().numpy()
-          save_comparison_plot(corrupted_np,out_np,orig_np,'dc_ae_images/'+str(i)+'_'+str(n_im))
+          save_comparison_plot(corrupted_np,out_np,orig_np,'aae_images/'+str(i)+'_'+str(n_im))
+    if latent_dim==2:
+      np_latent_out=torch.squeeze(latent_out).detach().numpy()
+      np_latent_noise=latent_noise.detach().numpy()
+      plt.clf()
+      plt.plot(np_latent_out[:,0], np_latent_out[:,1], 'ro',np_latent_noise[:,0],np_latent_noise[:,1],'b*')
+      plt.savefig('aae_images/latent_space_'+str(i))
 
     if (i+1)%save_every==0:
       print('save model ...')
-      torch.save({'epoch': i, 'model_state': encoder.state_dict(),'optimizer_state': optimizer_enc.state_dict()}, 'saved_models/dc_ae_enc_'+str(imsize)+'.pkl')
-      torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/dc_ae_gen_'+str(imsize)+'.pkl')     
+      torch.save({'epoch': i, 'model_state': encoder.state_dict(),'optimizer_state': optimizer_enc.state_dict()}, 'saved_models/aae_enc_'+str(imsize)+'.pkl')
+      torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/aae_gen_'+str(imsize)+'.pkl')
+      torch.save({'epoch': i, 'model_state': discriminator.state_dict(),'optimizer_state': optimizer_disc.state_dict()}, 'saved_models/aae_disc_'+str(imsize)+'.pkl')      
     i += 1
 
     return epoch_loss
@@ -208,9 +245,9 @@ if TRAINING:
   print('start training ...')
   for j in range(num_iter):
     closure()
-  #torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/dc_ae_gen_'+str(imsize)+'.pkl')
-  #torch.save({'epoch': i, 'model_state': encoder.state_dict(),'optimizer_state': optimizer_enc.state_dict()}, 'saved_models/dc_ae_enc_'+str(imsize)+'.pkl')
-
+  torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/aae_gen_'+str(imsize)+'.pkl')
+  torch.save({'epoch': i, 'model_state': encoder.state_dict(),'optimizer_state': optimizer_enc.state_dict()}, 'saved_models/aae_enc_'+str(imsize)+'.pkl')
+  torch.save({'epoch': i, 'model_state': discriminator.state_dict(),'optimizer_state': optimizer_disc.state_dict()}, 'saved_models/aae_disc_'+str(imsize)+'.pkl')   
 
 
 

@@ -33,26 +33,17 @@ class dc_encoder(nn.Module):
             )
             # state size. (ndf*2**i x imgsize/(2**(i+1)) x imgsize/(2**(i+1))
         if self.rest>1:
-            self.dc.add_module("layer"+str(self.depth),nn.Sequential(nn.Conv2d(int(ndf*np.power(2,self.depth-2)), latent_dim, self.rest, 1, 0, bias=False),
-            # nn.BatchNorm2d(latent_dim),
-            # nn.LeakyReLU(0.2, inplace=True)
+            self.dc.add_module("layer"+str(self.depth),nn.Sequential(nn.Conv2d(int(ndf*np.power(2,self.depth-2)), latent_dim, self.rest, 1, 0, bias=True),
             )
             )
         else:
-            self.dc.add_module("layer"+str(self.depth),nn.Sequential(nn.Conv2d(int(ndf*np.power(2,self.depth-2)), latent_dim, 2, 1, 0, bias=False),
-            # nn.BatchNorm2d(latent_dim),
-            # nn.LeakyReLU(0.2, inplace=True)
+            self.dc.add_module("layer"+str(self.depth),nn.Sequential(nn.Conv2d(int(ndf*np.power(2,self.depth-2)), latent_dim, 2, 1, 0, bias=True),
             )
             )
 
-        # self.fc = nn.Linear(latent_dim, latent_dim)
 
     def forward(self, input):
-        # features = torch.squeeze(self.dc(input))
         features=torch.unsqueeze(torch.unsqueeze(torch.squeeze(self.dc(input)),2),3)
-        # print(features.size())
-        #return torch.unsqueeze(torch.unsqueeze(self.fc(features),2),3)
-        # print(torch.unsqueeze(torch.unsqueeze(features,2),3).size())
         return features
 
 
