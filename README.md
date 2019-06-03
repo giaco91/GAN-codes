@@ -18,8 +18,8 @@ The file "aae.py" is a vanilla implementation of a deep convolutional adversaria
 
 ## DC-GAN regularized by a AAE (AAE-GAN)
 The file "aae_gan.py" is a vanilla implementation of a AAE regularized GAN. It is a mixture between 
-1. a mode regularized GAN (MD-GAN), Tong Che et. al.
-2. a adversarial autoencoder (AAE),  Alireza Makhzani et. al.
+1. Mode regularized GAN (MD-GAN), Tong Che et. al.
+2. Adversarial Autoencoder (AAE),  Alireza Makhzani et. al.
 
 To the best of my knowledge the AAE-GAN in this form has not been proposed yet. 
 
