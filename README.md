@@ -14,7 +14,7 @@ The file "dc_gan.py" is a vanilla implementation of a deep convolutional GAN.
 The file "e_gan.py" is a vanilla implementation of a deep convolutional evolutionary GAN. It is highly inspired by the ideas of Chaoyue Wang et. al.
 
 ## Deep convolutional adversarial autoencoder (AAE)
-The file "aae.py" is a vanilla implementation of a deep convolutional adversarial autoencoder.
+The file "aae.py" is a vanilla implementation of a deep convolutional adversarial autoencoder, proposed by Alireza Makhzani et. al.
 
 ## DC-GAN regularized by a AAE (AAE-GAN)
 The file "aae_gan.py" is a vanilla implementation of a AAE regularized GAN. It is a mixture between the ideas of 
