@@ -22,7 +22,7 @@ dtype = torch.FloatTensor
 PLOT = True
 TRAINING = True
 imsize = 32
-load_model = False
+load_model = True
 num_iter =200
 show_every = 20
 shuffle=True
@@ -120,8 +120,8 @@ print('inputshape '+str(net_input.size()))
 
 if not os.path.exists('saved_models/'):
     os.mkdir('saved_models')
-if not os.path.exists('ae_gan_images/') and PLOT:
-    os.mkdir('ae_gan_images')
+if not os.path.exists('aae_gan_images/') and PLOT:
+    os.mkdir('aae_gan_images')
 #-------image specific settigns----------
 encoder = dc_encoder(latent_dim,imsize,ndf=nef)
 generator = dc_generator(latent_dim,ngf=ngf,nc=3,imgsize=imsize)
@@ -135,10 +135,10 @@ optimizer_disc_image=torch.optim.Adam(discriminator_image.parameters(), lr=LR_di
 state_epoch=0
 if load_model:
   print('reload model....')
-  state_dict_enc=torch.load('saved_models/ae_gan_enc_'+str(imsize)+'.pkl')
-  state_dict_gen=torch.load('saved_models/ae_gan_gen_'+str(imsize)+'.pkl')
-  state_dict_disc_latent=torch.load('saved_models/ae_gan_disc_latent'+str(imsize)+'.pkl')
-  state_dict_disc_image=torch.load('saved_models/ae_gan_disc_image'+str(imsize)+'.pkl')
+  state_dict_enc=torch.load('saved_models/aae_gan_enc_'+str(imsize)+'.pkl')
+  state_dict_gen=torch.load('saved_models/aae_gan_gen_'+str(imsize)+'.pkl')
+  state_dict_disc_latent=torch.load('saved_models/aae_gan_disc_latent_'+str(imsize)+'.pkl')
+  state_dict_disc_image=torch.load('saved_models/aae_gan_disc_image_'+str(imsize)+'.pkl')
   state_epoch=state_dict_gen['epoch']
   encoder.load_state_dict(state_dict_enc['model_state'])
   generator.load_state_dict(state_dict_gen['model_state'])
@@ -255,14 +255,14 @@ def closure():
           out_np = out[n_im,:].transpose(0,1).transpose(1,2).detach().numpy()
           corrupted_np = torch.clamp(net_input[+n_im,:].transpose(0,1).transpose(1,2).detach(),0,1).numpy()
           orig_np=img_torch_array[n_im,:].transpose(0,1).transpose(1,2).detach().numpy()
-          save_comparison_plot(corrupted_np,out_np,orig_np,'ae_gan_images/'+str(i)+'_'+str(n_im))
+          save_comparison_plot(corrupted_np,out_np,orig_np,'aae_gan_images/'+str(i)+'_'+str(n_im))
 
         vutils.save_image(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:],
-                '%s/real_samples.png' % 'ae_gan_images',
+                '%s/real_samples.png' % 'aae_gan_images',
                 normalize=True)
         fake = generator(fixed_noise)
         vutils.save_image(fake.detach(),
-                '%s/fake_samples_epoch_%03d.png' % ('ae_gan_images', i),
+                '%s/fake_samples_epoch_%03d.png' % ('aae_gan_images', i),
                 normalize=True)
 
         if latent_dim==2:
@@ -274,10 +274,10 @@ def closure():
 
     if (i+1)%save_every==0:
       print('save model ...')
-      torch.save({'epoch': i, 'model_state': encoder.state_dict(),'optimizer_state': optimizer_enc.state_dict()}, 'saved_models/aae_enc_'+str(imsize)+'.pkl')
-      torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/aae_gen_'+str(imsize)+'.pkl')
-      torch.save({'epoch': i, 'model_state': discriminator_latent.state_dict(),'optimizer_state': optimizer_disc_latent.state_dict()}, 'saved_models/ae_gan_disc_latent_'+str(imsize)+'.pkl')
-      torch.save({'epoch': i, 'model_state': discriminator_image.state_dict(),'optimizer_state': optimizer_disc_image.state_dict()}, 'saved_models/ae_gan_disc_image_'+str(imsize)+'.pkl')      
+      torch.save({'epoch': i, 'model_state': encoder.state_dict(),'optimizer_state': optimizer_enc.state_dict()}, 'saved_models/aae_gan_enc_'+str(imsize)+'.pkl')
+      torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/aae_gan_gen_'+str(imsize)+'.pkl')
+      torch.save({'epoch': i, 'model_state': discriminator_latent.state_dict(),'optimizer_state': optimizer_disc_latent.state_dict()}, 'saved_models/aae_gan_disc_latent_'+str(imsize)+'.pkl')
+      torch.save({'epoch': i, 'model_state': discriminator_image.state_dict(),'optimizer_state': optimizer_disc_image.state_dict()}, 'saved_models/aae_gan_disc_image_'+str(imsize)+'.pkl')      
     i += 1
     return epoch_loss
 
@@ -286,10 +286,10 @@ if TRAINING:
   print('start training ...')
   for j in range(num_iter):
     closure()
-  torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/aae_gen_'+str(imsize)+'.pkl')
-  torch.save({'epoch': i, 'model_state': encoder.state_dict(),'optimizer_state': optimizer_enc.state_dict()}, 'saved_models/aae_enc_'+str(imsize)+'.pkl')
-  torch.save({'epoch': i, 'model_state': discriminator_latent.state_dict(),'optimizer_state': optimizer_disc_latent.state_dict()}, 'saved_models/ae_gan_disc_latent_'+str(imsize)+'.pkl')  
-  torch.save({'epoch': i, 'model_state': discriminator_image.state_dict(),'optimizer_state': optimizer_disc_image.state_dict()}, 'saved_models/ae_gan_disc_image_'+str(imsize)+'.pkl')  
+  torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/aae_gan_gen_'+str(imsize)+'.pkl')
+  torch.save({'epoch': i, 'model_state': encoder.state_dict(),'optimizer_state': optimizer_enc.state_dict()}, 'saved_models/aae_gan_enc_'+str(imsize)+'.pkl')
+  torch.save({'epoch': i, 'model_state': discriminator_latent.state_dict(),'optimizer_state': optimizer_disc_latent.state_dict()}, 'saved_models/aae_gan_disc_latent_'+str(imsize)+'.pkl')  
+  torch.save({'epoch': i, 'model_state': discriminator_image.state_dict(),'optimizer_state': optimizer_disc_image.state_dict()}, 'saved_models/aae_gan_disc_image_'+str(imsize)+'.pkl')  
 
 
 
