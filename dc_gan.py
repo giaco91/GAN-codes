@@ -92,9 +92,6 @@ img_torch_array=torch.from_numpy(img_np_array).type(dtype)
 print('size of img_torch_array: '+str(img_torch_array.size()))
 
 #----torch inizializations
-#---specify optimizer
-OPTIMIZER = 'adam'
-
 if not os.path.exists('saved_models/'):
     os.mkdir('saved_models')
 if not os.path.exists('dc_gan_images/') and PLOT:
@@ -173,9 +170,8 @@ def closure():
       # loss_disc_fake=criterion(d_hat1,label)
       # loss_disc_fake.backward()
       # loss_disc=loss_disc_real.item()+loss_disc_fake.item()
-      loss_disc.item()
-      D = d.mean().item()
-      D_hat1=d_hat1.mean().item()
+      # D = d.mean().item()
+      # D_hat1=d_hat1.mean().item()
       optimizer_disc.step()
 
 #---- generator training
@@ -184,7 +180,7 @@ def closure():
       # loss_gen=criterion(d_hat2,label)
       loss_gen=gen_loss_function(d_hat2,batchSize)
       loss_gen.backward()
-      D_hat2=d_hat2.mean().item()
+      # D_hat2=d_hat2.mean().item()
       optimizer_gen.step()
 
     # if  PLOT and (i+1) % show_every == 0:
@@ -198,15 +194,15 @@ def closure():
 
       print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
             % (i, num_iter+state_epoch, idx, len(batch_idx)-1,
-               loss_disc, loss_gen.item(), D, D_hat1, D_hat2))
-      if (i+1) % show_every == 0:
-          vutils.save_image(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:],
-                  '%s/real_samples.png' % 'dc_gan_images',
-                  normalize=True)
-          fake = generator(fixed_noise)
-          vutils.save_image(fake.detach(),
-                  '%s/fake_samples_epoch_%03d.png' % ('dc_gan_images', i),
-                  normalize=True)
+               loss_disc.item(), loss_gen.item(),  d.mean().item(), d_hat1.mean().item(), d_hat2.mean().item()))
+    if (i+1) % show_every == 0:
+        vutils.save_image(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:],
+                '%s/real_samples.png' % 'dc_gan_images',
+                normalize=True)
+        fake = generator(fixed_noise)
+        vutils.save_image(fake.detach(),
+                '%s/fake_samples_epoch_%03d.png' % ('dc_gan_images', i),
+                normalize=True)
 
     if (i+1)%save_every==0:
       print('save model ...')
@@ -224,22 +220,6 @@ if TRAINING:
   torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer_gen.state_dict()}, 'saved_models/dc_gan_generator'+str(imsize)+'.pkl')
   torch.save({'epoch': i, 'model_state': discriminator.state_dict(),'optimizer_state': optimizer_disc.state_dict()}, 'saved_models/dc_gan_discriminator'+str(imsize)+'.pkl') 
 #---- testing 
-
-# corrupted_img=net_input+(-2+j*0.1)
-# if PLOT:
-#   N=20
-#   corrupted_img=torch.randn(N, latent_dim, 1, 1, device='cpu')
-#   with torch.no_grad():
-#     latent_out=encoder(net_input[0:100,:])
-#     latent_std=torch.sqrt(torch.sum(torch.mul(latent_out,latent_out))/100)
-#     print('standard deviation in latent_space: '+str(latent_std))
-#     corrupted_img=torch.randn(N, latent_dim, 1, 1, device='cpu')*latent_std
-#     inpainted_img=torch.clamp(generator(corrupted_img), 0, 1).transpose(1,2).transpose(2,3).detach().numpy()
-#   original_img = img_torch_array[0:1,:].transpose(1,2).transpose(2,3).detach().numpy()[0,:]
-#   corrupted_img = masked_images[0:1,:].transpose(1,2).transpose(2,3).detach().numpy()[0,:]
-#   for j in range(N):
-#     inpainted_img_j = inpainted_img[j:j+1,:]
-#     save_comparison_plot(corrupted_img[0,:],inpainted_img_j[0,:],original_img[0,:],'conv_ae_images_latent_disc/'+str(j))
 
 
 
