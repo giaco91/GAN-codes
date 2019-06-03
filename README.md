@@ -22,4 +22,4 @@ The file "aae_gan.py" is a vanilla implementation of a AAE regularized GAN. It i
 2. a adversarial autoencoder (AAE),  Alireza Makhzani et. al.
 3. a variational audoencoder with a GAN regularizer (VAE-GAN),  Anders Larsen et. al.
 
-To the best of my knowledge this has not been proposed yet. Since all basic networks (such as encoder, generator and discriminator) used in this repo are identical, we can directly compaire the performance of the AAE-GAN to the other models under similar architectures (and similar implementation style).
+To the best of my knowledge the AAE-GAN in this form has not been proposed yet. Since all basic networks (such as encoder, generator and discriminator) used in this repo are identical, we can directly compaire the performance of the AAE-GAN to the other models under similar architectures (and similar implementation style).
