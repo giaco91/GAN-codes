@@ -24,8 +24,8 @@ def save_comparison_plot(img_corrupted,img_inpainted,img_orig,save_path):
     ax.set_axis_off()
     ax.set_title('original')
     plt.imshow(img_orig)
-    plt.subplots_adjust(hspace=-1, wspace=0)
-    plt.savefig(save_path+'.png', format='png', dpi='figure')   
+    #plt.subplots_adjust(hspace=-1, wspace=0)
+    plt.savefig(save_path+'.png', format='png', dpi=2000)   
     plt.close('all')
 
 def img_show(im):

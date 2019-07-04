@@ -33,6 +33,7 @@ batch_size=10#must be smaller or equal than max_num_img
 n_classes=10
 LR=0.0005
 ndf=5
+max_depth=7
 
 TEST=True
 test_every=1
@@ -66,7 +67,7 @@ classes = ('plane', 'car', 'bird', 'cat',
 
 
 #-------load model----------
-mult_discriminator=dc_mult_discriminator(imsize,ndf=ndf,n_classes=n_classes,nc=3,max_depth=7)
+mult_discriminator=dc_mult_discriminator(imsize,ndf=ndf,n_classes=n_classes,nc=3,max_depth=max_depth)
 optimizer_mult_disc= torch.optim.Adam(mult_discriminator.parameters(), lr=LR)
 state_epoch=0
 if load_model:
@@ -178,15 +179,25 @@ if TEST and (i+1)%test_every==0:
     #                             for j in range(batch_size)))
 
 
+with torch.no_grad():
     correct = 0
     total = 0
-    with torch.no_grad():
-        for data in testloader:
-            images, labels = data
-            outputs = mult_discriminator(images)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+    for data in trainloader:
+        images, labels = data
+        outputs = mult_discriminator(images)
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+    print('Accuracy of the network on the 10000 train images: %d %%' % (
+        100 * correct / total))
+    correct=0
+    total=0  
+    for data in testloader:
+        images, labels = data
+        outputs = mult_discriminator(images)
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
 
     print('Accuracy of the network on the 10000 test images: %d %%' % (
         100 * correct / total))

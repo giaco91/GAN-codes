@@ -21,22 +21,24 @@ dtype = torch.FloatTensor
 
 PLOT = True
 TRAINING = True
-imsize = 1024
+imsize = 4096
 load_model=True
-num_iter = 100
-show_every = 25
+num_iter = 1
+show_every = 1
 save_every=10
-LR= 0.01
+LR= 0.0001
 nz=2
 ngf=6
 add_noise=0
+max_n_channel=100
+
 #----- specifiy the figure
 
 random.seed(1)
 torch.manual_seed(1)
 
-img_path='photos/photos_corrupted/1.jpg'
-mask_path='photos/photos_mask/0.jpg'
+img_path='photos/photos_corrupted/postboxes.jpg'
+mask_path='photos/photos_mask/postboxes_mask.jpg'
 
 if not os.path.exists('saved_models/'):
     os.mkdir('saved_models')
@@ -66,11 +68,11 @@ mask_torch = np_to_torch(img_mask_np).type(dtype)
 masked_images=img_torch_array*mask_torch
 
 #---specify optimizer
-pad = 'reflection' # 'zero'
+# pad = 'reflection' # 'zero'
 OPTIMIZER = 'adam'
 
 #-------image specific settigns----------
-generator = dc_generator(nz,imgsize=imsize,ngf=ngf,nc=3)
+generator = dc_generator(nz,imgsize=imsize,ngf=ngf,nc=3,max_n_channel=max_n_channel)
         
 #----torch inizializations
 net_input=torch.randn(1, nz, 1, 1, device='cpu')
@@ -78,7 +80,7 @@ optimizer= torch.optim.Adam(generator.parameters(), lr=LR)
 state_epoch=0
 if load_model:
   print('reload model....')
-  state_dict=torch.load('saved_models/generator_DIP.pkl')
+  state_dict=torch.load('saved_models/generator_DIP_'+str(imsize)+'.pkl')
   state_epoch=state_dict['epoch']
   generator.load_state_dict(state_dict['model_state'])
   optimizer.load_state_dict(state_dict['optimizer_state'])
@@ -121,7 +123,7 @@ def closure():
 
     if (i+1)%save_every==0:
       print('save model ...')
-      torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer.state_dict()}, 'saved_models/generator_DIP.pkl')
+      torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer.state_dict()}, 'saved_models/generator_DIP_'+str(imsize)+'.pkl')
     i += 1
 
     return epoch_loss
@@ -131,14 +133,13 @@ if TRAINING:
   print('start training ...')
   for j in range(num_iter):
     closure()
-  torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer.state_dict()}, 'saved_models/generator_DIP.pkl')
+  torch.save({'epoch': i, 'model_state': generator.state_dict(),'optimizer_state': optimizer.state_dict()}, 'saved_models/generator_DIP_'+str(imsize)+'.pkl')
 
 #save final result: take real image in the noncurrupted regions
 reconstructed = generator(net_input)*(-mask_torch+1)+img_torch_array*mask_torch
 reconstructed_np=reconstructed[0,:].transpose(0,1).transpose(1,2).detach().numpy()
 masked_np = masked_images[0,:].transpose(0,1).transpose(1,2).detach().numpy()
 orig_np=img_torch_array[0,:].transpose(0,1).transpose(1,2).detach().numpy()
-
 save_comparison_plot(masked_np,reconstructed_np,orig_np,'DIP_images/final_reconstruction_'+str(i))
 
 

@@ -30,8 +30,8 @@ max_num_img=160
 batch_size=80#must be smaller or equal than max_num_img
 LR_gen= 0.001
 LR_disc=0.001
-n_generators=5
-n_discriminators=2
+n_generators=1
+n_discriminators=1
 nz=5
 
 mirror=True
@@ -221,7 +221,7 @@ if TRAINING:
 
   for g in range(n_generators):
     torch.save({'epoch': i, 'model_state': generator_list[g].state_dict(), 'optimizer_state': optimizer_gen_list[g].state_dict()}, 'saved_models/m_gan_generator'+str(imsize)+'_'+str(g)+'.pkl') 
-  for d in range(dc_discriminators):
+  for d in range(n_discriminators):
     torch.save({'epoch': i, 'model_state': discriminator_list[d].state_dict(),'optimizer_state': optimizer_disc_list[d].state_dict()}, 'saved_models/m_gan_discriminator'+str(imsize)+'_'+str(d)+'.pkl')
 
 

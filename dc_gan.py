@@ -6,7 +6,6 @@ import os
 import random
 import numpy as np
 from models.dc_generator import dc_generator
-from models.dc_encoder import dc_encoder
 from models.dc_discriminator import dc_discriminator
 import torch
 import torch.optim
@@ -173,6 +172,7 @@ def closure():
       # D = d.mean().item()
       # D_hat1=d_hat1.mean().item()
       optimizer_disc.step()
+
 
 #---- generator training
       d_hat2=discriminator(out)

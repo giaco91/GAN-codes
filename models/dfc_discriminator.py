@@ -16,6 +16,6 @@ class dfc_discriminator(nn.Module):
             nn.Sigmoid()))
 
     def forward(self, input):
-        return self.dfc_discr(input)
+        return torch.squeeze(self.dfc_discr(input))
 
 

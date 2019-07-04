@@ -6,7 +6,7 @@ class dc_discriminator(nn.Module):
     def __init__(self,imgsize,ndf,nc=3,max_depth=7):
         super(dc_discriminator, self).__init__()
             #nc: Number of channels in the training images. For color images this is 3
-            #ndf: # Size of feature maps in encoder
+            #ndf: # Size of feature maps
             # input is (nc) x imgsize x imgsize
             # Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
             # ConvTranspose2d(in_channels, out_channels, kernel_size, stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1, padding_mode='zeros')

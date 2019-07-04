@@ -34,7 +34,7 @@ latent_dim=20
 mirror=True
 rotate=True
 
-input_corruption='noise'#can be one of: 'None','noise' or 'holes'
+input_corruption='holes'#can be one of: 'None','noise' or 'holes'
 
 nef=20
 ngf=20

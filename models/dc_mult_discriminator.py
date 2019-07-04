@@ -4,7 +4,7 @@ import numpy as np
 from torch.nn import functional as F
 
 class dc_mult_discriminator(nn.Module):
-    def __init__(self,imgsize,ndf,n_classes,nc=3,max_depth=7,softmax=False):
+    def __init__(self,imgsize,ndf,n_classes,nc=3,max_depth=7,softmax=False,max_n_channel=10000):
         super(dc_mult_discriminator, self).__init__()
         self.softmax=softmax
             #nc: Number of channels in the training images. For color images this is 3
@@ -21,6 +21,11 @@ class dc_mult_discriminator(nn.Module):
             self.depth=int(depth)
         print('initialized a dc discriminator with depth = '+str(self.depth))
         self.dc_mult_discr = nn.Sequential()
+        in_ch=nc
+        out_ch=ndf
+        if out_ch>max_n_channel:
+            out_ch=max_n_channel
+        print(out_ch)
         for i in range(self.depth-1):
             if i==0:
                 in_ch=nc
@@ -31,6 +36,11 @@ class dc_mult_discriminator(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             nn.BatchNorm2d(out_ch))
             )
+            in_ch=out_ch
+            out_ch=int(ndf*np.power(2,i+1))
+            if out_ch>max_n_channel:
+                out_ch=max_n_channel
+            print(out_ch)
             # state size. (ndf*2**i x imgsize/(2**(i+1)) x imgsize/(2**(i+1))
         if self.rest>1:
             self.dc_mult_discr.add_module("layer"+str(self.depth),nn.Sequential(nn.Conv2d(int(ndf*np.power(2,self.depth-2)), n_classes, self.rest, 1, 0, bias=True))

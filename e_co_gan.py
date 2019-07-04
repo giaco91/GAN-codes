@@ -19,28 +19,27 @@ from common_utils import *
 #---global settings
 
 dtype = torch.FloatTensor
+PLOT = True
 TRAINING = True
 imsize = 32
-load_model = False
-num_iter =20
-selection_every= 10#is also show every
+load_model = True
+num_iter =10
+selection_every= 2#is also show every
 shuffle=True
 shuffle_every=10
 save_every=20
-max_num_img=80
+max_num_img=160
 batch_size=80#must be smaller or equal than max_num_img
-LR_gen= 0.0005
-LR_disc=0.0005
-nz=5
+LR_gen= 0.0001
+LR_disc=0.0001
+nz=2
 n_generator=9
 n_survivor=3 #must be a divisor of n_generator
 mirror=True
 rotate=True
-influence_factor=1#in [0,1] the amount of how much the new fake generate influences the history
-buffer_size=1400
-buffer_size=max(buffer_size,batch_size*n_generator)#buffersize must at least contain all outputs of the generators
-ngf=20
-ndf=20
+
+ngf=10
+ndf=10
 
 if n_generator%n_survivor!=0:
   raise ValueError('n_survivor must be a divisor of n_generator')
@@ -82,6 +81,9 @@ for img_name in os.listdir(img_path):
         img_list.append(pil_to_np(img_pil.rotate(180, expand=False)))
         i+=1
       if i<max_num_img:
+        img_list.append(pil_to_np(img_pil.rotate(180, expand=False)))
+        i+=1
+      if i<max_num_img:
         img_list.append(pil_to_np(img_pil.rotate(270, expand=False)))
         i+=1
 
@@ -94,11 +96,10 @@ for j in range(len(img_list)):
 img_torch_array=torch.from_numpy(img_np_array).type(dtype)
 print('size of img_torch_array: '+str(img_torch_array.size()))
 
-
 #----torch inizializations
 if not os.path.exists('saved_models/'):
     os.mkdir('saved_models')
-if not os.path.exists('e_gan_images/'):
+if not os.path.exists('e_gan_images/') and PLOT:
     os.mkdir('e_gan_images/')
 #-------image specific settigns----------
 def change_lr(optimizer,lr):
@@ -139,16 +140,6 @@ if load_model:
 def softmax(torch_array):
   torch_exp_array=torch.exp(torch_array)
   return torch_exp_array/torch.sum(torch_exp_array)
-
-def get_relative_distance(id_1,id_2):
-  if len(id_1)!=len(id_2):
-    raise ValueError('the two ids must be equally long!')
-  for i in range(len(id_1)):
-    idx=i+1
-    if id_1[:idx]!=id_2[:idx]:
-      return len(id_2)-(i)
-  return 0
-
 
 def mutation(survivor_list,optimizer_survivor_list,lr_list,loss_code_list,id_list):
   new_generator_list=[]
@@ -195,8 +186,8 @@ def gen_loss_function(d_hat,loss_code_softmax,batchSize):
     return loss/batchSize
 
 criterion = nn.BCELoss()
-fixed_noise = torch.randn(20, nz, 1, 1)
-fake_label_buffer = torch.full((buffer_size,), 0)
+fixed_noise = torch.randn(batch_size, nz, 1, 1)
+real_label = 1
 fake_label = 0
 
 #----- training loop--------
@@ -207,63 +198,45 @@ if n_img_loaded>batch_size*(len(batch_idx)-1):
   batch_idx.append(n_img_loaded)
 
 new_generator_list,new_optimizer_list,new_lr_list,new_loss_code_list,new_loss_code_softmax_list,new_id_list=mutation(survivor_list,optimizer_survivor_list,lr_list,loss_code_list,id_list)
-
-#----fill buffer----
-print('initializing buffer')
-buffer_size=max(n_generator*batch_size,buffer_size)
-buffer_fakes=torch.zeros(buffer_size,3,imsize,imsize)
-n_noise=int(buffer_size/n_generator)
-noise = torch.randn(n_noise, nz, 1, 1)
-rest=buffer_size-n_generator*n_noise
-for g in range(n_generator):
-  buffer_fakes[g*n_noise:(g+1)*n_noise,:,:,:]=new_generator_list[g](noise).detach()
-if rest>0:
-  buffer_fakes[n_generator:n_generator+rest,:,:,:]=new_generator_list[0](torch.randn(rest, nz, 1, 1)).detach()
-
 i = state_epoch
 def closure():  
-    global i,net_input,img_torch_array,new_generator_list,new_optimizer_list,new_lr_list,new_loss_code_list,new_loss_code_softmax_list,new_id_list,buffer_fakes
+    global i,net_input,img_torch_array,new_generator_list,new_optimizer_list,new_lr_list,new_loss_code_list,new_loss_code_softmax_list,new_id_list
     d_hat_nparray=np.zeros(n_generator)
 #---shuffle the data
     if shuffle and (i+1)%shuffle_every==0:
       shuffle_idx=torch.randperm(img_torch_array.size()[0])
       img_torch_array=img_torch_array[shuffle_idx]
-    
-
 #---batch loop
     for idx in range(len(batch_idx)-1):
-      buffer_fakes=buffer_fakes[torch.randperm(buffer_size)]
       batchSize=batch_idx[idx+1]-batch_idx[idx]
-      optimizer_disc.zero_grad() 
-      n_update=int(influence_factor*batchSize)
+      optimizer_disc.zero_grad()
+
 #-----generation
       noise = torch.randn(batchSize, nz, 1, 1)
       out_list=[]
       for g in range(n_generator):
-        fake_images_g=new_generator_list[g](noise)
-        out_list.append(fake_images_g)
-        buffer_fakes[g*n_update:(g+1)*n_update,:]=fake_images_g[:n_update,:].detach()
+        out_list.append(new_generator_list[g](noise))
  
 #----discriminator training
       d=discriminator(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:])
-      label = torch.full((batchSize,), 1)
+      label = torch.full((batchSize,), real_label)
       loss_disc_real=criterion(d,label)
       loss_disc_real.backward()
+      label.fill_(fake_label)
       loss_disc_fake=0
-      # for g in range(n_generator):
-      #   d_hat1=discriminator(out_list[g].detach())
-      #   loss_disc_fake+=criterion(d_hat1,label)
-      #   D_hat1+=d_hat1.mean().item()
-      d_hat1=discriminator(buffer_fakes)
-      loss_disc_fake=criterion(d_hat1,fake_label_buffer)
-      loss_disc_fake*=(batchSize/buffer_size)
+      D_hat1=0
+      for g in range(n_generator):
+        d_hat1=discriminator(out_list[g].detach())
+        loss_disc_fake+=criterion(d_hat1,label)
+        D_hat1+=d_hat1.mean().item()
+      D_hat1/=n_generator
+      loss_disc_fake/=n_generator
       loss_disc_fake.backward()
       D = d.mean().item()
       optimizer_disc.step()
-      #D_hat1=d_hat1.mean().item()*(batchSize/buffer_size)
 
 #---- generator training
-      D_hat=0
+      minibatch_loss_gen=np.zeros(n_generator)
       for g in range(n_generator):
         new_optimizer_list[g].zero_grad()
         d_hat=discriminator(out_list[g])
@@ -271,14 +244,12 @@ def closure():
         loss_gen.backward()
         new_optimizer_list[g].step()
         d_hat_nparray[g]+=d_hat.mean().item()
-        D_hat+=d_hat.mean().item()
-
-      D_hat/=n_generator
-
+        minibatch_loss_gen[g]+=loss_gen.item()
         
 
-      print('[%d/%d][%d/%d] D(x): %.4f D(G(z)): %.4f'
-            % (i+1, num_iter+state_epoch, idx+1, len(batch_idx)-1, D, D_hat))
+      print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f'
+            % (i+1, num_iter+state_epoch, idx+1, len(batch_idx)-1,
+               (loss_disc_real+loss_disc_fake).item(), np.mean(minibatch_loss_gen), D, D_hat1))
     if (i+1) % selection_every == 0:
       #-----selection
         print('selection and diversification....')
@@ -295,28 +266,18 @@ def closure():
           id_list[s]=new_id_list[idx_s]
         print('survivors learning rates: '+str(lr_list))
         print('survivors loss codes: '+str(loss_code_list_softmax))
-        # print('survivors id: '+str(id_list))
-        counter=0
-        s_rd=0
-        for k in range(len(id_list)-1):
-          for l in range(k+1,len(id_list)):
-            counter+=1
-            s_rd+=get_relative_distance(id_list[k],id_list[l])
-        m_rd=s_rd/counter
-        print('mean relative distance: %.3f' % (m_rd))
+        print('survivors id: '+str(id_list))
         #mutation and diversivication
         new_generator_list,new_optimizer_list,new_lr_list,new_loss_code_list,new_loss_code_softmax_list,new_id_list=mutation(survivor_list,optimizer_survivor_list,lr_list,loss_code_list,id_list)
         print('new generation')
         vutils.save_image(img_torch_array[batch_idx[idx]:batch_idx[idx+1],:],
                 '%s/real_samples.png' % 'e_gan_images',
                 normalize=True)
-
-
-        for s in range(n_survivor):
-          fake = survivor_list[s](fixed_noise)
-          vutils.save_image(fake.detach(),
-                  '%s/fake_samples_epoch_%03d_%01d.png' % ('e_gan_images', i,s),
-                  normalize=True)
+        #show fakes only from the best mutant
+        fake = survivor_list[0](fixed_noise)
+        vutils.save_image(fake.detach(),
+                '%s/fake_samples_epoch_%03d.png' % ('e_gan_images', i),
+                normalize=True)
 
     if (i+1)%save_every==0:
       print('save model ...')
@@ -336,8 +297,6 @@ if TRAINING:
     torch.save({'epoch': i, 'model_state': survivor_list[s].state_dict(),'loss_code': loss_code_list[s], 'lr':lr_list[s],'id': id_list[s],'optimizer_state': optimizer_survivor_list[s].state_dict()}, 'saved_models/e_gan_generator'+str(imsize)+'_'+str(s)+'.pkl')  
   torch.save({'epoch': i, 'model_state': discriminator.state_dict(),'optimizer_state': optimizer_disc.state_dict()}, 'saved_models/e_gan_discriminator'+str(imsize)+'.pkl') 
 #---- testing 
-
-
 
 
 
