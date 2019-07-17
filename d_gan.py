@@ -22,7 +22,7 @@ dtype = torch.FloatTensor
 # PLOT = True
 TRAINING = True
 imsize = 32
-load_model = True
+load_model = False
 num_iter =1
 show_every_n_batch=1
 shuffle=True
@@ -155,8 +155,8 @@ def closure():
       out_root=root_generator(noise)
       out_list=[]
       for g in range(n_classes):
-        # out_list.append(generator_list[g](out_root))
-        out_list.append(generator_list[g](out_root[g*r_batch_size:(g+1)*r_batch_size]))
+        out_list.append(generator_list[g](out_root))
+        # out_list.append(generator_list[g](out_root[g*r_batch_size:(g+1)*r_batch_size]))
  
 #----discriminator between real and fake images training
       d=mult_discriminator(data[0])
@@ -164,7 +164,7 @@ def closure():
       loss_disc_real.backward()
       loss_disc_fake=0
       for g in range(n_classes):
-        d_hat1=mult_discriminator(out_list[g].detach())
+        d_hat1=mult_discriminator(out_list[g][:r_batch_size].detach())
         loss_disc_fake+=disc_fake_loss(d_hat1,g)
       # loss_disc_fake/=n_classes
       loss_disc_fake.backward()
@@ -180,7 +180,7 @@ def closure():
         optimizer_gen_list[g].zero_grad()
         d_hat=mult_discriminator(out_list[g])
         loss_gen+=generator_loss(d_hat,g)
-      # loss_gen/=n_classes#we need to average over the generators
+      loss_gen/=n_classes#we need to average over the generators
       loss_gen.backward()
       optimizer_root_gen.step()
       for g in range(n_classes):
